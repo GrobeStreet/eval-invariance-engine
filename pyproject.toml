@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "eval-invariance-engine"
+version = "0.1.0"
+description = "Measure whether an AI eval score survives non-semantic perturbation. Ships a drop-in Inspect AI adapter."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Robert Morong" }]
+keywords = ["ai-evaluation", "robustness", "inspect-ai", "benchmarks", "reproducibility", "ai-safety"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Intended Audience :: Science/Research",
+]
+dependencies = []
+
+[project.optional-dependencies]
+inspect = ["inspect_ai>=0.3"]
+dev = ["pytest>=7"]
+
+[project.urls]
+Homepage = "https://github.com/GrobeStreet/eval-invariance-engine"
+Lineage = "https://github.com/GrobeStreet/mmlu-robustness-audit"
+
+[tool.setuptools]
+packages = ["eval_invariance_engine"]
