@@ -20,7 +20,8 @@ dependencies = []
 
 [project.optional-dependencies]
 inspect = ["inspect_ai>=0.3"]
-dev = ["pytest>=7", "inspect_ai>=0.3"]
+# inspect_ai requires Python >=3.10; the marker lets the pure core still test on 3.9.
+dev = ["pytest>=7", "inspect_ai>=0.3; python_version >= '3.10'"]
 
 [project.scripts]
 invariance-check = "eval_invariance_engine.cli:main"
