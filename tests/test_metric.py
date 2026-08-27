@@ -1,4 +1,8 @@
-"""Tests for the native Inspect metrics. Requires inspect_ai (dev extra)."""
+"""Tests for the native Inspect metrics. Requires inspect_ai (installed on Python >=3.10)."""
+import pytest
+
+pytest.importorskip("inspect_ai")  # skip cleanly on 3.9, where inspect_ai is unavailable
+
 from eval_invariance_engine.inspect_adapter import invariance_drift, invariance_flip_rate
 
 
