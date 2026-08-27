@@ -7,11 +7,12 @@ AI evaluation harness.
 
 Core (framework-agnostic, dependency-light): `perturbations`, `report`.
 Integration: `inspect_adapter` (optional; requires `inspect_ai`).
+CLI: `invariance-check` (see `cli`).
 """
 from .perturbations import MCQItem, cyclic_reorder, all_cyclic_variants, whitespace_variant
 from .report import InvarianceReport, build_report
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __all__ = [
     "MCQItem",
     "cyclic_reorder",
