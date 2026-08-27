@@ -1,8 +1,8 @@
 # eval-invariance-engine
 
-**A benchmark score that moves when you cyclically reorder the answer options, jitter the whitespace, or change the seed is not measuring reasoning — it is measuring formatting-sensitivity and memorization.** This library quantifies that drift and ships a drop-in adapter for [Inspect AI](https://inspect.aisi.org.uk), the evaluation harness standardizing across AI-safety work.
+**A benchmark score that moves when you cyclically reorder the answer options, jitter the whitespace, or change the seed is not measuring reasoning — it is measuring formatting-sensitivity and memorization.** This library quantifies that drift and ships a drop-in adapter, native metrics, and a CLI for [Inspect AI](https://inspect.aisi.org.uk), the evaluation harness standardizing across AI-safety work.
 
-It generalizes the option-order robustness method from [`mmlu-robustness-audit`](https://github.com/GrobeStreet/mmlu-robustness-audit) into a reusable, framework-agnostic tool with a first-class Inspect integration.
+It generalizes the option-order robustness method from [`mmlu-robustness-audit`](https://github.com/GrobeStreet/mmlu-robustness-audit) into a reusable, framework-agnostic tool.
 
 ## Why
 
@@ -15,45 +15,49 @@ pip install eval-invariance-engine          # core, zero dependencies
 pip install "eval-invariance-engine[inspect]"  # + Inspect AI integration
 ```
 
+## CLI
+
+```bash
+invariance-check demo                          # built-in fragility demo
+invariance-check report results.json           # score a results file, print the report
+invariance-check report results.json --fail-on-fragile   # exit 1 if fragile — use it as a CI gate
+```
+
+`results.json` is either a mapping `{"shift0": [true, false, ...], ...}` or a list of
+`{"condition": "shift0", "correct": true}` rows. `--fail-on-fragile` turns the check into a
+regression gate: wire it into CI and a benchmark that starts drifting fails the build.
+
 ## Quickstart (framework-agnostic)
 
 ```python
 from eval_invariance_engine import MCQItem, all_cyclic_variants, build_report
 
 item = MCQItem("Capital of France?", ["Paris", "Rome", "Bonn", "Madrid"], answer_index=0)
-
-# score your model under every cyclic option ordering, item-aligned per condition
 results = {"shift0": [...], "shift1": [...], "shift2": [...], "shift3": [...]}  # bool per item
-report = build_report(results)
-print(report.summary())
+print(build_report(results).summary())
 # [FRAGILE] n=... | drift=0.180 (95% CI 0.090-0.270) | flip_rate=0.31 | shift0=..., ...
 ```
 
-Run the included demo (a memorized position-bias model, no API needed):
+## Inspect AI integration — native metrics
 
-```bash
-python examples/demo.py
-```
-
-## Inspect AI integration
+`invariance_scorer()` attaches two custom `@metric`s — **`invariance_drift`** (max accuracy
+spread across conditions) and **`invariance_flip_rate`** (fraction of items whose correctness
+flips) — so the fragility numbers appear *inside the eval log* alongside accuracy, not just in
+a post-hoc script.
 
 ```python
 from inspect_ai import Task, eval
 from inspect_ai.solver import generate
 from inspect_ai.dataset import MemoryDataset
 from eval_invariance_engine import MCQItem
-from eval_invariance_engine.inspect_adapter import cyclic_variant_samples, invariance_scorer, invariance_report_from_scores
+from eval_invariance_engine.inspect_adapter import cyclic_variant_samples, invariance_scorer
 
 items = [MCQItem("2+2=?", ["4", "5", "6", "7"], 0)]
 samples = [s for i, it in enumerate(items) for s in cyclic_variant_samples(it, group_id=str(i))]
 
 task = Task(dataset=MemoryDataset(samples), solver=generate(), scorer=invariance_scorer())
 logs = eval(task, model="openai/gpt-4o-mini")
-
-scored = [{"condition": s.scores["_factory"].metadata["invariance_condition"],
-           "correct": s.scores["_factory"].metadata["correct"]}
-          for s in logs[0].samples]
-print(invariance_report_from_scores(scored).summary())
+# logs[0] now carries `invariance_drift` and `invariance_flip_rate` in its metrics.
 ```
 
 ## Method
@@ -64,7 +68,7 @@ print(invariance_report_from_scores(scored).summary())
 
 ## Status
 
-`v0.1.0` — core + Inspect adapter, tested. Roadmap: whitespace/seed conditions surfaced through the Inspect metric API, a CLI (`invariance-check <task>`), and a native custom `@metric`. Part of the [Open Evaluation Robustness Lab](https://manifund.org/projects/open-evaluation-robustness-lab--90-day-pilot).
+`v0.2.0` — core, Inspect adapter, native `@metric`s, and the `invariance-check` CLI, all tested (17 tests). Roadmap: whitespace/seed conditions surfaced through the Inspect metric path, and a task-wrapping helper. Part of the [Open Evaluation Robustness Lab](https://manifund.org/projects/open-evaluation-robustness-lab--90-day-pilot).
 
 ## License
 
