@@ -38,6 +38,20 @@ print(build_report(results).summary())
 # [FRAGILE] n=... | drift=0.180 (95% CI 0.090-0.270) | flip_rate=0.31 | shift0=..., ...
 ```
 
+## One line: audit any Inspect multiple-choice task
+
+```python
+from inspect_ai import eval
+from eval_invariance_engine.inspect_adapter import invariance_task
+
+# my_task is any Inspect Task whose samples have `choices` + `target`
+eval(invariance_task(my_task), model="openai/gpt-4o-mini")
+```
+
+`invariance_task()` expands every item into all cyclic option orderings, scores them with the
+invariance scorer, and attaches the drift + flip-rate metrics — so a single call turns an
+existing benchmark into a fragility audit. Non-MCQ samples pass through untouched (skipped).
+
 ## Inspect AI integration — native metrics
 
 `invariance_scorer()` attaches two custom `@metric`s — **`invariance_drift`** (max accuracy
@@ -68,7 +82,7 @@ logs = eval(task, model="openai/gpt-4o-mini")
 
 ## Status
 
-`v0.2.0` — core, Inspect adapter, native `@metric`s, and the `invariance-check` CLI, all tested (17 tests). Roadmap: whitespace/seed conditions surfaced through the Inspect metric path, and a task-wrapping helper. Part of the [Open Evaluation Robustness Lab](https://manifund.org/projects/open-evaluation-robustness-lab--90-day-pilot).
+`v0.3.0` — core, Inspect adapter, native `@metric`s, the `invariance-check` CLI, and the `invariance_task()` one-call wrapper, all tested (21 tests). Roadmap: whitespace/seed conditions surfaced as first-class Inspect conditions. Part of the [Open Evaluation Robustness Lab](https://manifund.org/projects/open-evaluation-robustness-lab--90-day-pilot).
 
 ## License
 
