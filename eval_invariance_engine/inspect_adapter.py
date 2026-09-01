@@ -1,25 +1,28 @@
 """Drop-in integration with the Inspect AI eval harness (https://inspect.aisi.org.uk).
 
 Pieces:
-  1. `cyclic_variant_samples()` expands one MCQ into Inspect `Sample`s (one per option
-     ordering), tagging each with an invariance group id + condition in metadata.
-  2. `invariance_scorer()` scores the option letter and stamps the condition + correctness
-     into the Score metadata.
-  3. `invariance_drift()` / `invariance_flip_rate()` are native Inspect `@metric`s: they
-     aggregate the per-sample scores so the fragility number appears *inside* the eval log.
-  4. `invariance_report_from_scores()` builds a full `InvarianceReport` post-eval.
+  1. `invariance_task(base_task)` — the one-liner: take any multiple-choice Inspect Task and
+     return a new Task that runs every item under all cyclic option orderings, scored for
+     invariance. This is the ergonomic entry point.
+  2. `cyclic_variant_samples()` expands one MCQ into Inspect `Sample`s (one per option order),
+     tagging each with an invariance group id + condition in metadata.
+  3. `invariance_scorer()` grades the option letter and stamps condition + correctness.
+  4. `invariance_drift()` / `invariance_flip_rate()` are native Inspect `@metric`s: the
+     fragility numbers appear *inside* the eval log.
+  5. `invariance_report_from_scores()` builds a full `InvarianceReport` post-eval.
 
 All `inspect_ai` imports are lazy: the framework-agnostic core works without it installed.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from .perturbations import MCQItem, all_cyclic_variants
 from .report import InvarianceReport, build_report
 
 _GROUP_KEY = "invariance_group"
 _COND_KEY = "invariance_condition"
+_ANSWER_INSTRUCTION = "Answer with the letter of the correct option only."
 
 
 def cyclic_variant_samples(item: MCQItem, group_id: str, letters: str = "ABCD") -> List[Any]:
@@ -28,9 +31,8 @@ def cyclic_variant_samples(item: MCQItem, group_id: str, letters: str = "ABCD") 
 
     samples = []
     for shift, variant in enumerate(all_cyclic_variants(item)):
-        rendered = variant.question + "\n" + "\n".join(
-            f"{letters[i]}. {opt}" for i, opt in enumerate(variant.options)
-        )
+        body = "\n".join(f"{letters[i]}. {opt}" for i, opt in enumerate(variant.options))
+        rendered = f"{variant.question}\n{body}\n\n{_ANSWER_INSTRUCTION}"
         samples.append(
             Sample(
                 input=rendered,
@@ -39,6 +41,73 @@ def cyclic_variant_samples(item: MCQItem, group_id: str, letters: str = "ABCD") 
             )
         )
     return samples
+
+
+def _target_to_index(target: Any, choices: List[str], letters: str = "ABCD") -> Optional[int]:
+    """Resolve an Inspect Sample target (letter, choice text, list, or index) to an option index."""
+    if isinstance(target, (list, tuple)):
+        target = target[0] if target else None
+    if target is None:
+        return None
+    t = str(target).strip()
+    if len(t) == 1 and t.upper() in letters[: len(choices)]:
+        return letters.index(t.upper())
+    if t in choices:
+        return choices.index(t)
+    if t.isdigit() and 0 <= int(t) < len(choices):
+        return int(t)
+    return None
+
+
+def _input_text(inp: Any) -> str:
+    if isinstance(inp, str):
+        return inp
+    # ChatMessage list or other: fall back to a readable string
+    try:
+        return "\n".join(getattr(m, "text", str(m)) for m in inp)
+    except TypeError:
+        return str(inp)
+
+
+def invariance_task(base_task: Any, letters: str = "ABCD", name: Optional[str] = None) -> Any:
+    """Convert any multiple-choice Inspect `Task` into an invariance audit — in one call.
+
+    Every sample that has `choices` + a resolvable `target` is expanded into all cyclic
+    option orderings (the answer set is identical, only labels rotate). The returned Task
+    scores with `invariance_scorer()`, so its log carries `invariance_drift` and
+    `invariance_flip_rate` alongside accuracy. Non-MCQ samples are skipped.
+
+        from inspect_ai import eval
+        eval(invariance_task(my_mcq_task), model="openai/gpt-4o-mini")
+    """
+    from inspect_ai import Task
+    from inspect_ai.dataset import MemoryDataset
+    from inspect_ai.solver import generate
+
+    expanded: List[Any] = []
+    for i, s in enumerate(base_task.dataset):
+        choices = list(getattr(s, "choices", None) or [])
+        if not choices:
+            continue
+        idx = _target_to_index(getattr(s, "target", None), choices, letters)
+        if idx is None:
+            continue
+        group_id = str(s.id) if getattr(s, "id", None) is not None else str(i)
+        item = MCQItem(question=_input_text(s.input), options=choices, answer_index=idx)
+        expanded.extend(cyclic_variant_samples(item, group_id=group_id, letters=letters))
+
+    if not expanded:
+        raise ValueError(
+            "invariance_task: no multiple-choice samples found — each sample needs "
+            "`choices` and a resolvable `target`."
+        )
+
+    return Task(
+        dataset=MemoryDataset(expanded),
+        solver=generate(),
+        scorer=invariance_scorer(),
+        name=name or (getattr(base_task, "name", None) or "task") + "-invariance",
+    )
 
 
 def _row(sample_score: Any):
