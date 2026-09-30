@@ -1,12 +1,14 @@
 # eval-invariance-engine
 
-**A benchmark score that moves when you cyclically reorder the answer options, jitter the whitespace, or change the seed is not measuring reasoning — it is measuring formatting-sensitivity and memorization.** This library quantifies that drift and ships a drop-in adapter, native metrics, and a CLI for [Inspect AI](https://inspect.aisi.org.uk), the evaluation harness standardizing across AI-safety work.
+**If an evaluation score changes substantially under semantics-preserving transformations, part of the measurement is sensitive to the evaluation representation rather than only the intended capability.** This library quantifies that instability and ships a drop-in adapter, native metrics, and a CLI for [Inspect AI](https://inspect.aisi.org.uk).
 
 It generalizes the option-order robustness method from [`mmlu-robustness-audit`](https://github.com/GrobeStreet/mmlu-robustness-audit) into a reusable, framework-agnostic tool.
 
 ## Why
 
-Leaderboards treat a headline score as ground truth. But the same model, on the same questions, can score several points differently when you change things that carry no meaning. If a score is not *invariant* to non-semantic perturbation, the ranking it produces is partly an artifact. This engine makes that fragility measurable — and re-runnable.
+Leaderboards often present a headline score as if it were a stable property of a model. But the same model, on the same semantic questions, can move when answer labels rotate or other meaning-preserving presentation details change. If a score is not *invariant* to a declared non-semantic perturbation, part of the measurement depends on the evaluation representation. This engine makes that fragility measurable and rerunnable.
+
+This package does **not** claim that instability proves contamination, memorization, or any specific causal mechanism. It measures the narrower quantity directly supported by the experiment: sensitivity of the evaluation result to declared semantics-preserving perturbations.
 
 ## Install
 
@@ -82,7 +84,7 @@ logs = eval(task, model="openai/gpt-4o-mini")
 
 ## Status
 
-`v0.3.0` — core, Inspect adapter, native `@metric`s, the `invariance-check` CLI, and the `invariance_task()` one-call wrapper, all tested (21 tests). Roadmap: whitespace/seed conditions surfaced as first-class Inspect conditions. Part of the [Open Evaluation Robustness Lab](https://manifund.org/projects/open-evaluation-robustness-lab--90-day-pilot).
+`v0.3.0` — core, Inspect adapter, native `@metric`s, the `invariance-check` CLI, and the `invariance_task()` one-call wrapper, all tested (21 tests). Roadmap: whitespace/seed conditions surfaced as first-class Inspect conditions, plus outside usage and reproduction evidence.
 
 ## License
 
