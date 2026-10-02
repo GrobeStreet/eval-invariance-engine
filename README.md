@@ -54,6 +54,8 @@ eval(invariance_task(my_task), model="openai/gpt-4o-mini")
 invariance scorer, and attaches the drift + flip-rate metrics — so a single call turns an
 existing benchmark into a fragility audit. Non-MCQ samples pass through untouched (skipped).
 
+**Using Inspect already?** I am looking for outside tasks to test this wrapper against. See [issue #1](https://github.com/GrobeStreet/eval-invariance-engine/issues/1).
+
 ## Inspect AI integration — native metrics
 
 `invariance_scorer()` attaches two custom `@metric`s — **`invariance_drift`** (max accuracy
