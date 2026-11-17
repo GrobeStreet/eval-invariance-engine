@@ -11,11 +11,11 @@ def test_fragile_case_exact_numbers():
     assert r.per_condition_accuracy["shift0"] == 1.0
     assert r.per_condition_accuracy["shift1"] == 0.5
     assert r.max_drift == 0.5
-    assert r.flip_rate == 0.5   # items 2 and 3 change correctness
+    assert r.flip_rate == 0.5
     assert r.verdict == "fragile"
 
 
-def test_invariant_case():
+def test_below_threshold_case():
     results = {
         "a": [True, False, True, False],
         "b": [True, False, True, False],
@@ -23,7 +23,7 @@ def test_invariant_case():
     r = build_report(results, seed=0)
     assert r.max_drift == 0.0
     assert r.flip_rate == 0.0
-    assert r.verdict == "invariant"
+    assert r.verdict == "below_threshold"
 
 
 def test_unequal_lengths_raise():

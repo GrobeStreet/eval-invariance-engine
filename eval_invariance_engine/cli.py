@@ -5,8 +5,8 @@ Usage:
   invariance-check report results.json      score a results file, print the report
   invariance-check report results.json --fail-on-fragile   exit 1 if fragile (CI gate)
 
-`results.json` is either a mapping {condition: [true, false, ...]} or a list of
-{"condition": "...", "correct": true} rows.
+`results.json` is a list of item_id/condition/correct rows.
+Legacy position-aligned mappings require explicit --assume-aligned.
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ import sys
 from typing import Dict, List, Optional
 
 from .perturbations import MCQItem, all_cyclic_variants
-from .report import build_report
+from .report import build_report, results_from_rows
 
 
 def _demo_results() -> Dict[str, List[bool]]:
@@ -34,15 +34,23 @@ def _demo_results() -> Dict[str, List[bool]]:
     return results
 
 
-def _load_results(path: str) -> Dict[str, List[bool]]:
-    with open(path) as fh:
-        data = json.load(fh)
+def _unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON key: {key!r}")
+        result[key] = value
+    return result
+
+
+def _load_results(path: str, assume_aligned: bool = False) -> Dict[str, List[bool]]:
+    with open(path, encoding="utf-8") as fh:
+        data = json.load(fh, object_pairs_hook=_unique_object)
     if isinstance(data, dict):
-        return {k: [bool(x) for x in v] for k, v in data.items()}
-    by_cond: Dict[str, List[bool]] = {}
-    for row in data:
-        by_cond.setdefault(row["condition"], []).append(bool(row["correct"]))
-    return by_cond
+        if not assume_aligned:
+            raise ValueError("mapping input has no item IDs; use item_id rows or explicitly pass --assume-aligned")
+        return data  # build_report validates types; never coerce with bool().
+    return results_from_rows(data)
 
 
 def _emit(results, threshold, seed, fail_on_fragile) -> int:
@@ -63,14 +71,19 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     r = sub.add_parser("report", help="score a results JSON file")
     r.add_argument("path")
+    r.add_argument("--assume-aligned", action="store_true", help="accept legacy mappings whose item pairing you verified")
     r.add_argument("--threshold", type=float, default=0.03, help="fragile if drift exceeds this")
     r.add_argument("--seed", type=int, default=0)
     r.add_argument("--fail-on-fragile", action="store_true")
 
     args = parser.parse_args(argv)
-    if args.cmd == "demo":
-        return _emit(_demo_results(), 0.03, 0, args.fail_on_fragile)
-    return _emit(_load_results(args.path), args.threshold, args.seed, args.fail_on_fragile)
+    try:
+        if args.cmd == "demo":
+            return _emit(_demo_results(), 0.03, 0, args.fail_on_fragile)
+        return _emit(_load_results(args.path, args.assume_aligned), args.threshold, args.seed, args.fail_on_fragile)
+    except (OSError, ValueError, TypeError) as exc:
+        parser.error(str(exc))
+
 
 
 if __name__ == "__main__":
