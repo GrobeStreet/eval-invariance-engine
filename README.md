@@ -137,3 +137,5 @@ built-in mock provider, without provider keys or inference charges.
 See [the worked report](examples/WORKED_REPORT.md).
 
 MIT. AI-assisted authorship is disclosed in [AI_USAGE.md](AI_USAGE.md).
+
+Inspect live metrics return `NaN` (unavailable) until item/condition pairing is complete. Invalid values and duplicate cells still raise errors. Use the strict report API for the final completeness gate; a partial native metric is never a passing verdict.

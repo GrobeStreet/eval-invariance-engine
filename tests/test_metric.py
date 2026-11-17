@@ -24,11 +24,8 @@ def test_metrics_match_id_paired_report_despite_shuffled_scores():
 
 
 @pytest.mark.parametrize("scores", [
-    [], [score("a", True)],
     [score("a", True), score("a", True), score("b", False)],
-    [score("a", True, "q1"), score("b", False, "q2")],
     [score("a", "false"), score("b", True)],
-    [score("a", True, invariance_expected_conditions=["a", "b", "c"]), score("b", False)],
 ])
 def test_native_metrics_reject_incomplete_or_ambiguous_data(scores):
     for metric in [invariance_drift(), invariance_correctness_flip_rate()]:
@@ -42,3 +39,19 @@ def test_post_eval_rows_require_identity_and_preserve_alignment():
     rows = [{"item_id": "q", "condition": "a", "correct": True},
             {"item_id": "q", "condition": "b", "correct": False}]
     assert invariance_report_from_scores(rows).correctness_flip_rate == 1
+
+
+@pytest.mark.parametrize("scores", [
+    [], [score("a", True)],
+    [score("a", True, "q1"), score("b", False, "q2")],
+    [score("a", True, invariance_expected_conditions=["a", "b", "c"]), score("b", False)],
+])
+def test_live_metrics_are_unavailable_until_pairing_is_complete(scores):
+    import math
+    for metric in [invariance_drift(), invariance_correctness_flip_rate()]:
+        assert math.isnan(metric(scores))
+
+
+def test_final_report_still_rejects_partial_live_batch():
+    with pytest.raises(ValueError):
+        invariance_report_from_scores([{"item_id": "q1", "condition": "a", "correct": True}])

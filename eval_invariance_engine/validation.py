@@ -2,10 +2,14 @@
 from collections.abc import Mapping, Sequence
 
 
+class IncompleteCoverageError(ValueError):
+    """Valid cells do not yet cover a complete paired comparison."""
+
+
 def validate_results(results):
     """Validate explicitly item-aligned arrays; never coerce truthiness."""
     if not isinstance(results, Mapping) or len(results) < 2:
-        raise ValueError("results must contain at least two conditions")
+        raise IncompleteCoverageError("results must contain at least two conditions")
     copied = {}
     n = None
     for condition, values in results.items():
@@ -46,7 +50,7 @@ def results_from_rows(rows):
     items = sorted(by_condition[conditions[0]])
     for condition in conditions:
         if set(by_condition[condition]) != set(items):
-            raise ValueError("every item_id must appear exactly once in every condition (missing coverage)")
+            raise IncompleteCoverageError("every item_id must appear exactly once in every condition (missing coverage)")
     return validate_results({c: [by_condition[c][item] for item in items] for c in conditions})
 
 

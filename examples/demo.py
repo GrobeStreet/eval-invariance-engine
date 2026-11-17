@@ -1,9 +1,8 @@
-"""Runnable demo: a 'brittle' model that reads the label instead of reasoning.
+"""Offline synthetic demo of a model that always selects the first option.
 
-We simulate a model that always answers 'A' (a memorized position bias). Under
-cyclic option reordering the *correct* letter moves, so this model's accuracy
-swings wildly across conditions — exactly the fragility the engine is built to
-expose. No API key or network required.
+Cyclic rotations move the correct option, exposing position sensitivity in
+this deliberately constructed example. This does not diagnose memorization
+or establish that arbitrary option reorderings preserve meaning.
 """
 from eval_invariance_engine.perturbations import MCQItem, all_cyclic_variants
 from eval_invariance_engine.report import build_report
@@ -35,3 +34,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

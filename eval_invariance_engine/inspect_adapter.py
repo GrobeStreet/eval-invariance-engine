@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 
 from .perturbations import MCQItem, all_cyclic_variants
 from .report import InvarianceReport, build_report
-from .validation import point_metrics, results_from_rows
+from .validation import IncompleteCoverageError, point_metrics, results_from_rows
 
 _GROUP_KEY = "invariance_group"
 _COND_KEY = "invariance_condition"
@@ -140,8 +140,19 @@ def _rows_from_scores(scores):
                      "correct": correct})
     results = results_from_rows(rows)
     if expected is not None and set(results) != expected:
-        raise ValueError("missing expected conditions in Inspect scores")
+        raise IncompleteCoverageError("missing expected conditions in Inspect scores")
     return results
+
+
+def _live_point_metric(scores, index):
+    # Inspect invokes metrics on partial batches for progress displays. Never
+    # turn missing pairs into a numeric success; final report APIs remain strict.
+    if not scores:
+        return float("nan")
+    try:
+        return point_metrics(_rows_from_scores(scores))[index]
+    except IncompleteCoverageError:
+        return float("nan")
 
 
 def invariance_drift():
@@ -149,7 +160,7 @@ def invariance_drift():
     @metric(name="invariance_drift", scores="unreduced")
     def _drift():
         def compute(scores: List[Any]) -> float:
-            return point_metrics(_rows_from_scores(scores))[1]
+            return _live_point_metric(scores, 1)
         return compute
     return _drift()
 
@@ -159,7 +170,7 @@ def invariance_correctness_flip_rate():
     @metric(name="invariance_correctness_flip_rate", scores="unreduced")
     def _correctness_flip():
         def compute(scores: List[Any]) -> float:
-            return point_metrics(_rows_from_scores(scores))[2]
+            return _live_point_metric(scores, 2)
         return compute
     return _correctness_flip()
 
