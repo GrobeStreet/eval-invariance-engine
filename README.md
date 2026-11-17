@@ -1,93 +1,139 @@
-# eval-invariance-engine
+# Eval Invariance Engine
 
-**If an evaluation score changes substantially under semantics-preserving transformations, part of the measurement is sensitive to the evaluation representation rather than only the intended capability.** This library quantifies that instability and ships a drop-in adapter, native metrics, and a CLI for [Inspect AI](https://inspect.aisi.org.uk).
+Measure **accuracy drift and per-item correctness changes** under declared
+conditions. The core is standard-library Python; the optional Inspect adapter
+builds a new plain-MCQ task using cyclic option rotations.
 
-It generalizes the option-order robustness method from [`mmlu-robustness-audit`](https://github.com/GrobeStreet/mmlu-robustness-audit) into a reusable, framework-agnostic tool.
+These diagnostics do not establish statistical equivalence, production
+readiness, contamination, or memorization. Check that a transformation preserves
+the intended answer for your task.
 
-## Why
-
-Leaderboards often present a headline score as if it were a stable property of a model. But the same model, on the same semantic questions, can move when answer labels rotate or other meaning-preserving presentation details change. If a score is not *invariant* to a declared non-semantic perturbation, part of the measurement depends on the evaluation representation. This engine makes that fragility measurable and rerunnable.
-
-This package does **not** claim that instability proves contamination, memorization, or any specific causal mechanism. It measures the narrower quantity directly supported by the experiment: sensitivity of the evaluation result to declared semantics-preserving perturbations.
-
-## Install
+## Install from this checkout
 
 ```bash
-pip install eval-invariance-engine          # core, zero dependencies
-pip install "eval-invariance-engine[inspect]"  # + Inspect AI integration
+python -m pip install -e .
+invariance-check demo
 ```
 
-## CLI
+Core: Python 3.9+. Optional integration: Python 3.11+ and Inspect AI 0.3.290 or
+newer; 0.3.290 is the pinned integration-test version for this change.
+The default branch or a pull request is not automatically a PyPI release.
+
+## Preferred input: explicit item IDs
+
+A JSON array contains exactly one row per item and condition. IDs and condition
+names are non-empty strings; `correct` must be an actual JSON boolean.
+
+```json
+[
+  {"item_id": "q1", "condition": "original", "correct": true},
+  {"item_id": "q2", "condition": "original", "correct": false},
+  {"item_id": "q2", "condition": "rotated", "correct": false},
+  {"item_id": "q1", "condition": "rotated", "correct": true}
+]
+```
+
+Rows may be shuffled. Duplicates, missing item/condition cells, empty data,
+single conditions, and strings such as `"false"` are rejected.
 
 ```bash
-invariance-check demo                          # built-in fragility demo
-invariance-check report results.json           # score a results file, print the report
-invariance-check report results.json --fail-on-fragile   # exit 1 if fragile — use it as a CI gate
+invariance-check report examples/paired_results.json
+invariance-check report examples/paired_results.json --json
+invariance-check report results.json --threshold 0.05 --fail-on-drift
 ```
 
-`results.json` is either a mapping `{"shift0": [true, false, ...], ...}` or a list of
-`{"condition": "shift0", "correct": true}` rows. `--fail-on-fragile` turns the check into a
-regression gate: wire it into CI and a benchmark that starts drifting fails the build.
+Exit codes: 0 = valid report without a triggered requested gate; 1 = observed
+accuracy drift exceeds the requested tolerance; 2 = invalid input/settings.
+The default tolerance is an illustrative 0.03, not a validated universal
+readiness threshold. Select tolerances before inspecting results.
+A drift-only gate does not gate correctness instability.
 
-## Quickstart (framework-agnostic)
+Legacy mappings such as `{"a": [true, false], "b": [false, true]}` require
+`--assume-aligned` at the CLI. That flag explicitly trusts row positions; the
+program cannot verify item identity in this format. Python mapping callers
+likewise assert positional alignment. Prefer ID-bearing rows.
+
+## Python
 
 ```python
-from eval_invariance_engine import MCQItem, all_cyclic_variants, build_report
+from eval_invariance_engine import build_report
 
-item = MCQItem("Capital of France?", ["Paris", "Rome", "Bonn", "Madrid"], answer_index=0)
-results = {"shift0": [...], "shift1": [...], "shift2": [...], "shift3": [...]}  # bool per item
-print(build_report(results).summary())
-# [FRAGILE] n=... | drift=0.180 (95% CI 0.090-0.270) | flip_rate=0.31 | shift0=..., ...
+rows = [
+    {"item_id": "q1", "condition": "a", "correct": True},
+    {"item_id": "q1", "condition": "b", "correct": False},
+    {"item_id": "q2", "condition": "a", "correct": False},
+    {"item_id": "q2", "condition": "b", "correct": True},
+]
+report = build_report(rows, fragile_threshold=0.05, n_boot=2000, seed=0)
+print(report.summary())
+# Accuracy drift is zero, but correctness_flip_rate is 1.0.
 ```
 
-## One line: audit any Inspect multiple-choice task
+The report names the point-estimate threshold result
+`drift_above_threshold` or `drift_not_above_threshold`. Neither means invariant.
+It includes per-condition accuracy, correctness flip rate, and an exploratory
+paired-item percentile bootstrap interval for max accuracy drift, with seed,
+draw count and method recorded. Resampling preserves the entire condition
+vector for each original item.
+
+The bootstrap assumes independent original items representative of a target
+population. It does not justify population inference from a convenience sample.
+Small samples, boundary estimates and max-over-condition selection can give
+poor interval coverage. This implementation is not an equivalence test.
+
+**Correctness flips are not answer flips.** Two different wrong answers do not
+change correctness. Boolean correctness inputs cannot recover underlying-answer
+changes. The deprecated `report.flip_rate` property aliases
+`correctness_flip_rate` only.
+
+## Inspect: deliberately build a new task
+
+```bash
+python -m pip install -e ".[inspect]"
+```
 
 ```python
 from inspect_ai import eval
-from eval_invariance_engine.inspect_adapter import invariance_task
+from eval_invariance_engine.inspect_adapter import cyclic_mcq_task
 
-# my_task is any Inspect Task whose samples have `choices` + `target`
-eval(invariance_task(my_task), model="openai/gpt-4o-mini")
+audit = cyclic_mcq_task(my_task.dataset)
+# Configure this new task's model, limits and other settings explicitly.
+eval(audit, model="your-configured-model")
 ```
 
-`invariance_task()` expands every item into all cyclic option orderings, scores them with the
-invariance scorer, and attaches the drift + flip-rate metrics — so a single call turns an
-existing benchmark into a fragility audit. Non-MCQ samples pass through untouched (skipped).
+This is a **new generate-only audit**, not a general wrapper. Source solvers,
+scorers, tools, sandbox, setup, model settings and limits are not inherited.
+Only plain question/choices/single-target samples are supported. Non-MCQ,
+chat/file-bearing, duplicate-ID and mixed-choice-count datasets fail explicitly.
+Source sample metadata is retained except that reserved `invariance_` keys are
+rejected. The scorer accepts a single option letter; other output is counted
+incorrect and labeled as an invalid answer, not guessed from its first letter.
 
-**Using Inspect already?** I am looking for outside tasks to test this wrapper against. See [issue #1](https://github.com/GrobeStreet/eval-invariance-engine/issues/1).
+Native metrics are `invariance_drift` and
+`invariance_correctness_flip_rate`. Both validate identity, duplicates and full
+coverage; they do not silently discard missing conditions. Use one epoch and
+complete rotations. Repeated epochs require a separately specified analysis.
 
-## Inspect AI integration — native metrics
+The old `invariance_task(my_task)` entry point now errors rather than silently
+replacing task semantics. Use the new factory, or explicitly acknowledge the
+rebuild with `invariance_task(my_task, rebuild=True)`.
+`invariance_flip_rate()` is a deprecated name for correctness flips.
+`--fail-on-fragile` remains an alias for the drift-only CLI gate.
 
-`invariance_scorer()` attaches two custom `@metric`s — **`invariance_drift`** (max accuracy
-spread across conditions) and **`invariance_flip_rate`** (fraction of items whose correctness
-flips) — so the fragility numbers appear *inside the eval log* alongside accuracy, not just in
-a post-hoc script.
+Cyclic rotations are not all permutations. Whitespace restyling remains a
+separate utility and is not a generated Inspect condition.
 
-```python
-from inspect_ai import Task, eval
-from inspect_ai.solver import generate
-from inspect_ai.dataset import MemoryDataset
-from eval_invariance_engine import MCQItem
-from eval_invariance_engine.inspect_adapter import cyclic_variant_samples, invariance_scorer
+## Validation and worked report
 
-items = [MCQItem("2+2=?", ["4", "5", "6", "7"], 0)]
-samples = [s for i, it in enumerate(items) for s in cyclic_variant_samples(it, group_id=str(i))]
-
-task = Task(dataset=MemoryDataset(samples), solver=generate(), scorer=invariance_scorer())
-logs = eval(task, model="openai/gpt-4o-mini")
-# logs[0] now carries `invariance_drift` and `invariance_flip_rate` in its metrics.
+```bash
+python -m pip install -e ".[dev]"
+python -m pytest -q
+python examples/demo.py
 ```
 
-## Method
+The core tests cover invalid inputs and order-independent pairing. Optional
+tests exercise native Inspect metrics and a complete evaluation with its
+built-in mock provider, without provider keys or inference charges.
+See [the worked report](examples/WORKED_REPORT.md).
 
-- **Perturbations** are deterministic and semantics-preserving: cyclic option reordering (the answer set is identical, only labels rotate) and whitespace restyling. The correct real-world answer never changes.
-- **Report**: per-condition accuracy, `max_drift` (best - worst condition), `flip_rate` (fraction of items whose correctness flipped across conditions — the sharpest non-semantic-sensitivity signal), a bootstrap 95% CI on the drift, and a `fragile` / `invariant` verdict.
-- **Deterministic** given a seed; the core is pure standard library.
-
-## Status
-
-`v0.3.0` — core, Inspect adapter, native `@metric`s, the `invariance-check` CLI, and the `invariance_task()` one-call wrapper, all tested (21 tests). Roadmap: whitespace/seed conditions surfaced as first-class Inspect conditions, plus outside usage and reproduction evidence.
-
-## License
-
-MIT. AI-assisted authorship disclosed in [`AI_USAGE.md`](AI_USAGE.md); all logic is deterministic and unit-tested.
+MIT. AI-assisted authorship is disclosed in [AI_USAGE.md](AI_USAGE.md).

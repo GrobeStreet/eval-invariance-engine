@@ -1,0 +1,22 @@
+{
+  "conditions": [
+    "original",
+    "rotated"
+  ],
+  "per_condition_accuracy": {
+    "original": 0.5,
+    "rotated": 0.5
+  },
+  "max_drift": 0.0,
+  "correctness_flip_rate": 0.5,
+  "drift_ci95": [
+    0.0,
+    0.75
+  ],
+  "n_items": 4,
+  "verdict": "drift_not_above_threshold",
+  "drift_threshold": 0.03,
+  "bootstrap_samples": 2000,
+  "bootstrap_seed": 0,
+  "interval_method": "paired-item percentile bootstrap; exploratory, not an equivalence test"
+}
