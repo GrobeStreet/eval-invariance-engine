@@ -1,46 +1,57 @@
-"""Tests for the native Inspect metrics. Requires inspect_ai (installed on Python >=3.10)."""
 import pytest
-
-pytest.importorskip("inspect_ai")  # skip cleanly on 3.9, where inspect_ai is unavailable
-
-from eval_invariance_engine.inspect_adapter import invariance_drift, invariance_flip_rate
-
-
-def _sample_score(cond, correct, group="0"):
-    from inspect_ai.scorer import Score, SampleScore
-
-    return SampleScore(
-        score=Score(
-            value="C" if correct else "I",
-            metadata={"invariance_condition": cond, "correct": correct},
-        ),
-        sample_id=f"{group}:{cond}",
-        sample_metadata={"invariance_group": group, "invariance_condition": cond},
-    )
+pytest.importorskip("inspect_ai")
+from inspect_ai.scorer import Score, SampleScore
+from eval_invariance_engine.inspect_adapter import (
+    invariance_drift, invariance_correctness_flip_rate, invariance_report_from_scores,
+)
 
 
-def test_drift_metric():
-    m = invariance_drift()
-    scores = [
-        _sample_score("shift0", True),
-        _sample_score("shift0", True),
-        _sample_score("shift1", False),
-        _sample_score("shift1", False),
-    ]
-    assert m(scores) == 1.0  # shift0 accuracy 1.0, shift1 accuracy 0.0
+def score(cond, correct, group="q1", **extra):
+    return SampleScore(score=Score(value="C" if correct else "I",
+                                   metadata={"correct": correct, **extra}),
+                       sample_id=f"{group}:{cond}",
+                       sample_metadata={"invariance_group": group, "invariance_condition": cond})
 
 
-def test_drift_metric_single_condition_is_zero():
-    m = invariance_drift()
-    assert m([_sample_score("shift0", True), _sample_score("shift0", False)]) == 0.0
+def test_metrics_match_id_paired_report_despite_shuffled_scores():
+    scores = [score("a", True, "q1"), score("a", False, "q2"),
+              score("b", False, "q2"), score("b", True, "q1")]
+    assert invariance_drift()(scores) == 0
+    assert invariance_correctness_flip_rate()(scores) == 0
+    scores[-1] = score("b", False, "q1")
+    assert invariance_drift()(scores) == 0.5
+    assert invariance_correctness_flip_rate()(scores) == 0.5
 
 
-def test_flip_rate_metric():
-    m = invariance_flip_rate()
-    scores = [
-        _sample_score("shift0", True, group="A"),
-        _sample_score("shift1", False, group="A"),   # group A flips
-        _sample_score("shift0", True, group="B"),
-        _sample_score("shift1", True, group="B"),     # group B stable
-    ]
-    assert m(scores) == 0.5
+@pytest.mark.parametrize("scores", [
+    [score("a", True), score("a", True), score("b", False)],
+    [score("a", "false"), score("b", True)],
+])
+def test_native_metrics_reject_incomplete_or_ambiguous_data(scores):
+    for metric in [invariance_drift(), invariance_correctness_flip_rate()]:
+        with pytest.raises(ValueError):
+            metric(scores)
+
+
+def test_post_eval_rows_require_identity_and_preserve_alignment():
+    with pytest.raises(ValueError, match="item_id"):
+        invariance_report_from_scores([{"condition": "a", "correct": True}])
+    rows = [{"item_id": "q", "condition": "a", "correct": True},
+            {"item_id": "q", "condition": "b", "correct": False}]
+    assert invariance_report_from_scores(rows).correctness_flip_rate == 1
+
+
+@pytest.mark.parametrize("scores", [
+    [], [score("a", True)],
+    [score("a", True, "q1"), score("b", False, "q2")],
+    [score("a", True, invariance_expected_conditions=["a", "b", "c"]), score("b", False)],
+])
+def test_live_metrics_are_unavailable_until_pairing_is_complete(scores):
+    import math
+    for metric in [invariance_drift(), invariance_correctness_flip_rate()]:
+        assert math.isnan(metric(scores))
+
+
+def test_final_report_still_rejects_partial_live_batch():
+    with pytest.raises(ValueError):
+        invariance_report_from_scores([{"item_id": "q1", "condition": "a", "correct": True}])
